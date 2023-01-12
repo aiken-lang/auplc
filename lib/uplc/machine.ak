@@ -1,7 +1,7 @@
-use aiken/list
 use uplc/builtins.{DefaultFunction}
-use uplc/constant.{Constant}
-use uplc/term.{Delay, Term, Var}
+use uplc/constant.{Constant, Integer}
+use uplc/term.{Apply,
+  Builtin, Delay, Error, Force, Lambda, TConstant, Term, Var}
 
 pub type Env =
   List<Value>
@@ -31,7 +31,18 @@ fn compute(ctx: Context, env: Env, term: Term) -> Term {
       return(ctx, value)
     }
     Delay(body) -> return(ctx, VDelay(body, env))
-    _ -> todo("finish terms")
+    Lambda { param, body } -> return(ctx, VLambda { param, body, env })
+    Apply { function, argument } -> {
+      let frame = FrameApplyArg(env, argument, ctx)
+      compute(frame, env, function)
+    }
+    TConstant(x) -> return(ctx, VCon(x))
+    Force(body) -> {
+      let frame = FrameForce(ctx)
+      compute(frame, env, body)
+    }
+    Error -> error("evaluation failure")
+    Builtin(_) -> error("builtins not supported")
   }
 }
 
@@ -55,7 +66,10 @@ fn apply_eval(ctx: Context, function: Value, argument: Value) -> Term {
 }
 
 fn force_eval(ctx: Context, value: Value) -> Term {
-  todo
+  when value is {
+    VDelay(body, env) -> compute(ctx, env, body)
+    _ -> error("nonpolymorphic instantiation")
+  }
 }
 
 fn discharge_value(value: Value) -> Term {
@@ -72,10 +86,10 @@ fn lookup_var(index: Int, env: Env) -> Value {
 
 fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
   if current > index {
-    error("get_or_err: not found")
+    error("open term evaluation")
   } else {
     when env is {
-      [] -> error("get_or_err: not found")
+      [] -> error("open term evaluation")
       [x, ..xs] ->
         if index == current {
           x
@@ -85,3 +99,12 @@ fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
     }
   }
 }
+// test run_1() {
+//   let term =
+//     Apply {
+//       function: Lambda { param: 0, body: Var(0) },
+//       argument: TConstant(Integer(1)),
+//     }
+
+//   run(term) == TConstant(Integer(1))
+// }

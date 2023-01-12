@@ -10,7 +10,7 @@ pub type Term {
 
   Apply { function: Term, argument: Term }
 
-  Constant(Constant)
+  TConstant(Constant)
 
   Force(Term)
 
