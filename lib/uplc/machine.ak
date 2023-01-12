@@ -99,6 +99,7 @@ fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
     }
   }
 }
+// TODO: mutual recursion does not work atm
 // test run_1() {
 //   let term =
 //     Apply {
