@@ -1,3 +1,4 @@
+use aiken/list
 use uplc/builtins.{DefaultFunction}
 use uplc/constant.{Constant}
 use uplc/term.{Delay, Term, Var}
@@ -46,7 +47,6 @@ fn return(ctx: Context, value: Value) -> Term {
       let term = discharge_value(value)
       term
     }
-    _ -> todo("finish ctxs")
   }
 }
 
@@ -62,6 +62,26 @@ fn discharge_value(value: Value) -> Term {
   todo
 }
 
-fn lookup_var(name: Int, env: Env) -> Value {
-  todo
+fn lookup_var(index: Int, env: Env) -> Value {
+  if index < 0 {
+    error("get_or_err: index is negative")
+  } else {
+    do_get_or_err(env, index, 0)
+  }
+}
+
+fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
+  if current > index {
+    error("get_or_err: not found")
+  } else {
+    when env is {
+      [] -> error("get_or_err: not found")
+      [x, ..xs] ->
+        if index == current {
+          x
+        } else {
+          do_get_or_err(xs, index, current + 1)
+        }
+    }
+  }
 }
