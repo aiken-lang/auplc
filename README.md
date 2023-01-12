@@ -1,27 +1,7 @@
 # uplc
 
-Write validators in the `validators` folder, and supporting functions in the `lib` folder using `.ak` as a file extension.
-
-For example, as `validators/always_true.ak`
-
-```gleam
-pub fn spend(_datum: Data, _redeemer: Data, _context: Data) -> Bool {
-  True
-}
-```
-
-Validators are named after their purpose, so one of:
-
-- `script`
-- `mint`
-- `withdraw`
-- `certify`
-
-## Building
-
-```sh
-aiken build
-```
+This is just for fun. I don't see why this would ever be useful and
+it'll probably remain incomplete or limited.
 
 ## Testing
 
