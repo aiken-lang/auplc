@@ -41,8 +41,8 @@ fn compute(ctx: Context, env: Env, term: Term) -> Term {
       let frame = FrameForce(ctx)
       compute(frame, env, body)
     }
-    Error -> error("evaluation failure")
-    Builtin(_) -> error("builtins not supported")
+    Error -> fail @"evaluation failure"
+    Builtin(_) -> fail @"builtins not supported"
   }
 }
 
@@ -68,7 +68,7 @@ fn apply_eval(ctx: Context, function: Value, argument: Value) -> Term {
 fn force_eval(ctx: Context, value: Value) -> Term {
   when value is {
     VDelay(body, env) -> compute(ctx, env, body)
-    _ -> error("nonpolymorphic instantiation")
+    _ -> fail @"nonpolymorphic instantiation"
   }
 }
 
@@ -78,7 +78,7 @@ fn discharge_value(value: Value) -> Term {
 
 fn lookup_var(index: Int, env: Env) -> Value {
   if index < 0 {
-    error("get_or_err: index is negative")
+    fail @"get_or_err: index is negative"
   } else {
     do_get_or_err(env, index, 0)
   }
@@ -86,10 +86,10 @@ fn lookup_var(index: Int, env: Env) -> Value {
 
 fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
   if current > index {
-    error("open term evaluation")
+    fail @"open term evaluation"
   } else {
     when env is {
-      [] -> error("open term evaluation")
+      [] -> fail @"open term evaluation"
       [x, ..xs] ->
         if index == current {
           x
@@ -99,13 +99,13 @@ fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
     }
   }
 }
-// TODO: mutual recursion does not work atm
-// test run_1() {
-//   let term =
-//     Apply {
-//       function: Lambda { param: 0, body: Var(0) },
-//       argument: TConstant(Integer(1)),
-//     }
 
-//   run(term) == TConstant(Integer(1))
-// }
+test run_1() {
+  let term =
+    Apply {
+      function: Lambda { param: 0, body: Var(1) },
+      argument: TConstant(Integer(1)),
+    }
+
+  run(term) == TConstant(Integer(1))
+}

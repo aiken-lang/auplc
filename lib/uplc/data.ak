@@ -1,7 +1,7 @@
 pub type PlutusData {
   Constr { tag: Int, any_constructor: Option<Int>, fields: List<PlutusData> }
 
-  Map(List<#(PlutusData, PlutusData)>)
+  Map(List<(PlutusData, PlutusData)>)
 
   Int(Int)
 
