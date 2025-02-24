@@ -17,15 +17,10 @@ pub type Context {
 pub type Value {
   VCon(Constant)
   VDelay(Term, Env)
-  VLambda { param: Int, body: Term, env: Env }
-  // term holds current builtin state
-  VBuiltin {
-    fun: Int,
-    term: Term,
-    force_count: Int,
-    args_count: Int,
-    args: List<Value>,
-  }
+  VLambda { body: Term, env: Env }
+  // don't need to hold builtin state
+  // this is literally serializable
+  VBuiltin { fun: Int, force_count: Int, args_count: Int, args: List<Value> }
 }
 
 pub fn run(term: Term) -> Term {
@@ -39,7 +34,7 @@ fn compute(ctx: Context, env: Env, term: Term) -> Term {
       return(ctx, value)
     }
     TConstant(x) -> return(ctx, VCon(x))
-    Lambda { param, body } -> return(ctx, VLambda { param, body, env })
+    Lambda { body } -> return(ctx, VLambda { body, env })
     Delay(body) -> return(ctx, VDelay(body, env))
     Force(body) -> compute(FrameForce(ctx), env, body)
     Apply { function, argument } ->
@@ -50,7 +45,7 @@ fn compute(ctx: Context, env: Env, term: Term) -> Term {
 
       let args_count = builtin.index_bytearray(default_arg_counts, fun)
 
-      return(ctx, VBuiltin { fun, term, force_count, args_count, args: [] })
+      return(ctx, VBuiltin { fun, force_count, args_count, args: [] })
     }
   }
 }
@@ -73,19 +68,13 @@ fn return(ctx: Context, value: Value) -> Term {
 fn force_eval(ctx: Context, value: Value) -> Term {
   when value is {
     VDelay(body, env) -> compute(ctx, env, body)
-    VBuiltin { fun, term, force_count, args_count, args } ->
+    VBuiltin { fun, force_count, args_count, args } ->
       if force_count > 0 {
         //TODO: Should call evalBuiltinApp here for exact semantics
         // but in reality we dont have a builtin that only takes in force
         return(
           ctx,
-          VBuiltin {
-            fun,
-            term: Force(term),
-            force_count: force_count - 1,
-            args_count,
-            args,
-          },
+          VBuiltin { fun, force_count: force_count - 1, args_count, args },
         )
       } else {
         fail @"builtin term argument expected"
@@ -95,31 +84,53 @@ fn force_eval(ctx: Context, value: Value) -> Term {
 }
 
 fn apply_eval(ctx: Context, function: Value, argument: Value) -> Term {
-  todo
+  when function is {
+    VLambda { body, env } -> compute(ctx, [argument, ..env], body)
+    VBuiltin { fun, force_count, args_count, args } ->
+      if force_count == 0 {
+        return(ctx, eval_builtin(fun, args_count, args, argument))
+      } else {
+        fail @"Unexpected Builtin Term Argument"
+      }
+    _ -> fail @""
+  }
 }
 
 fn eval_builtin(
   fun: Int,
-  term: Term,
   args_count: Int,
   args: List<Value>,
+  next_arg: Value,
 ) -> Value {
-  todo
+  if args_count == 0 {
+    fail @"Impossible"
+  } else if args_count == 1 {
+    call_builtin(fun, [next_arg, ..args])
+  } else {
+    VBuiltin {
+      fun,
+      force_count: 0,
+      args_count: args_count - 1,
+      args: [next_arg, ..args],
+    }
+  }
 }
 
 fn call_builtin(fun: Int, args: List<Value>) -> Value {
+  // Remember args are applied in reverse order
+  // So the last argument is at the front of the list
   if fun < 43 {
     when fun is {
       // AddInteger
       0 ->
         when args is {
-          [VCon(Integer(a)), VCon(Integer(b))] -> VCon(Integer(a + b))
+          [VCon(Integer(b)), VCon(Integer(a))] -> VCon(Integer(a + b))
           _ -> fail @"Fail Case Here"
         }
       // SubtractInteger
       1 ->
         when args is {
-          [VCon(Integer(a)), VCon(Integer(b))] -> VCon(Integer(a - b))
+          [VCon(Integer(b)), VCon(Integer(a))] -> VCon(Integer(a - b))
           _ -> fail @"Fail Case Here"
         }
       // Case for negative builtins
@@ -131,14 +142,73 @@ fn call_builtin(fun: Int, args: List<Value>) -> Value {
 }
 
 fn discharge_value(value: Value) -> Term {
-  todo
+  when value is {
+    VCon(con) -> TConstant(con)
+    VDelay(term, env) -> discharge_term_with_env(0, env, Delay(term))
+    VLambda { body, env } -> discharge_term_with_env(0, env, Lambda(body))
+    VBuiltin { fun, force_count, args, .. } -> {
+      let forces_applied =
+        builtin.index_bytearray(default_force_counts, fun) - force_count
+
+      let builtin_forces = discharge_builtin_forces(fun, forces_applied)
+
+      discharge_builtin_args(builtin_forces, args)
+    }
+  }
+  // VLambda { body: Term, env: Env }
+  // // don't need to hold builtin state
+  // // this is literally serializable
+  // VBuiltin { fun: Int, force_count: Int, args_count: Int, args: List<Value> }
+}
+
+fn discharge_builtin_forces(fun: Int, forces_applied: Int) -> Term {
+  if forces_applied == 0 {
+    Builtin(fun)
+  } else {
+    Force(discharge_builtin_forces(fun, forces_applied - 1))
+  }
+}
+
+fn discharge_builtin_args(fun: Term, args: List<Value>) -> Term {
+  when args is {
+    [] -> fun
+    [x, ..xs] -> {
+      let arg_term = discharge_value(x)
+
+      discharge_builtin_args(fun, xs) |> Apply(arg_term)
+    }
+  }
+}
+
+// The env is for Vars.
+// You look up the var based on how many lambdas you descended
+// to see if the lambda the var references is among the lambdas
+// not yet evaluated or if the var refers to a lambda that put a value in the env
+fn discharge_term_with_env(lambda_count: Int, env: Env, term: Term) {
+  when term is {
+    Lambda { body } ->
+      discharge_term_with_env(lambda_count + 1, env, body) |> Lambda
+    Var(index) as var ->
+      if lambda_count >= index {
+        var
+      } else {
+        discharge_value(lookup_var(index - lambda_count, env))
+      }
+    Apply { function, argument } ->
+      discharge_term_with_env(lambda_count, env, function)
+        |> Apply(discharge_term_with_env(lambda_count, env, argument))
+
+    Delay(term) -> discharge_term_with_env(lambda_count, env, term) |> Delay
+    Force(term) -> discharge_term_with_env(lambda_count, env, term) |> Force
+    t -> t
+  }
 }
 
 fn lookup_var(index: Int, env: Env) -> Value {
-  if index < 0 {
-    fail @"get_or_err: index is negative"
+  if index <= 0 {
+    fail @"get_or_err: index is negative or zero"
   } else {
-    do_get_or_err(env, index, 0)
+    do_get_or_err(env, index, 1)
   }
 }
 
@@ -160,10 +230,7 @@ fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
 
 test run_1() {
   let term =
-    Apply {
-      function: Lambda { param: 0, body: Var(1) },
-      argument: TConstant(Integer(1)),
-    }
+    Apply { function: Lambda { body: Var(1) }, argument: TConstant(Integer(1)) }
 
-  run(TConstant(Integer(1))) == TConstant(Integer(1))
+  run(term) == TConstant(Integer(1))
 }

@@ -7,8 +7,8 @@ pub type Term {
   Var(DebruijnIndex)
 
   Delay(Term)
-
-  Lambda { param: Int, body: Term }
+  // param is excluded since it's always 0
+  Lambda { body: Term }
 
   Apply { function: Term, argument: Term }
 
