@@ -362,15 +362,3 @@ pub const default_arg_counts = {
       1,
     ]
   }
-
-pub type NotBuiltin<a> =
-  fn() -> a
-
-pub type OneArgBuiltin<a, b> =
-  fn(fn(a) -> b) -> fn(a) -> b
-
-pub type TwoArgBuiltin<a, b, c> =
-  fn(fn(a, b) -> c) -> fn(a) -> fn(b) -> c
-
-pub type BuiltinRunTime<func> =
-  func
