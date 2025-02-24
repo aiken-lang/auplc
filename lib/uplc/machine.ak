@@ -237,3 +237,15 @@ test run_1() {
 
   run(term) == TConstant(Integer(2))
 }
+
+test run_2() {
+  let term =
+    Apply(
+      Lambda(Lambda(Apply(Apply(Builtin(0), Var(2)), Var(2)))),
+      TConstant(Integer(1)),
+    )
+
+  run(term) == Lambda(
+    Apply(Apply(Builtin(0), TConstant(Integer(1))), TConstant(Integer(1))),
+  )
+}
