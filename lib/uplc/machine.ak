@@ -1,5 +1,7 @@
 use aiken/builtin
-use uplc/builtins.{default_arg_counts, default_force_counts}
+use uplc/builtins.{
+  add_integer, default_arg_counts, default_force_counts, subtract_integer,
+}
 use uplc/constant.{Constant, Integer}
 use uplc/term.{
   Apply, Builtin, Case, Delay, Error, Force, Lambda, TConstant, TConstr, Term,
@@ -280,7 +282,7 @@ fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
 test run_1() {
   let term =
     Apply(
-      Lambda(Apply(Apply(Builtin(0), Var(1)), Var(1))),
+      Lambda(Apply(Apply(Builtin(add_integer), Var(1)), Var(1))),
       TConstant(Integer(1)),
     )
 
@@ -290,7 +292,7 @@ test run_1() {
 test run_2() {
   let term =
     Apply(
-      Lambda(Lambda(Apply(Apply(Builtin(0), Var(2)), Var(2)))),
+      Lambda(Lambda(Apply(Apply(Builtin(add_integer), Var(2)), Var(2)))),
       TConstant(Integer(1)),
     )
 
@@ -304,7 +306,7 @@ test run_3() {
     Apply(
       Lambda(
         Apply(
-          Lambda(Apply(Apply(Builtin(1), Var(1)), Var(2))),
+          Lambda(Apply(Apply(Builtin(subtract_integer), Var(1)), Var(2))),
           TConstant(Integer(3)),
         ),
       ),
@@ -318,7 +320,7 @@ test run_4() {
   let term =
     Case(
       TConstr(0, [TConstant(Integer(3)), TConstant(Integer(1))]),
-      [Lambda(Lambda(Apply(Apply(Builtin(1), Var(2)), Var(1))))],
+      [Lambda(Lambda(Apply(Apply(Builtin(subtract_integer), Var(2)), Var(1))))],
     )
 
   run(term) == TConstant(Integer(2))
