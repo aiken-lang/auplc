@@ -230,7 +230,10 @@ fn do_get_or_err(env: Env, index: Int, current: Int) -> Value {
 
 test run_1() {
   let term =
-    Apply { function: Lambda { body: Var(1) }, argument: TConstant(Integer(1)) }
+    Apply(
+      Lambda(Apply(Apply(Builtin(0), Var(1)), Var(1))),
+      TConstant(Integer(1)),
+    )
 
-  run(term) == TConstant(Integer(1))
+  run(term) == TConstant(Integer(2))
 }
