@@ -1,8 +1,10 @@
-use uplc/builtins.{DefaultFunction}
 use uplc/constant.{Constant}
 
+pub type DebruijnIndex =
+  Int
+
 pub type Term {
-  Var(Int)
+  Var(DebruijnIndex)
 
   Delay(Term)
 
@@ -16,5 +18,5 @@ pub type Term {
 
   Error
 
-  Builtin(DefaultFunction)
+  Builtin(Int)
 }

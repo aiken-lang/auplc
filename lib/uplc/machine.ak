@@ -1,4 +1,5 @@
-use uplc/builtins.{DefaultFunction}
+use aiken/builtin
+use uplc/builtins.{default_arg_counts, default_force_counts}
 use uplc/constant.{Constant, Integer}
 use uplc/term.{Apply,
   Builtin, Delay, Error, Force, Lambda, TConstant, Term, Var}
@@ -8,7 +9,7 @@ pub type Env =
 
 pub type Context {
   FrameApplyFun(Value, Context)
-  FrameApplyArg(Env, Term, Context)
+  FrameAwaitFunTerm(Env, Term, Context)
   FrameForce(Context)
   NoFrame
 }
@@ -17,7 +18,14 @@ pub type Value {
   VCon(Constant)
   VDelay(Term, Env)
   VLambda { param: Int, body: Term, env: Env }
-  VBuiltin { fun: DefaultFunction, term: Term }
+  // term holds current builtin state
+  VBuiltin {
+    fun: Int,
+    term: Term,
+    force_count: Int,
+    args_count: Int,
+    args: List<Value>,
+  }
 }
 
 pub fn run(term: Term) -> Term {
@@ -30,26 +38,27 @@ fn compute(ctx: Context, env: Env, term: Term) -> Term {
       let value = lookup_var(name, env)
       return(ctx, value)
     }
-    Delay(body) -> return(ctx, VDelay(body, env))
-    Lambda { param, body } -> return(ctx, VLambda { param, body, env })
-    Apply { function, argument } -> {
-      let frame = FrameApplyArg(env, argument, ctx)
-      compute(frame, env, function)
-    }
     TConstant(x) -> return(ctx, VCon(x))
-    Force(body) -> {
-      let frame = FrameForce(ctx)
-      compute(frame, env, body)
-    }
+    Lambda { param, body } -> return(ctx, VLambda { param, body, env })
+    Delay(body) -> return(ctx, VDelay(body, env))
+    Force(body) -> compute(FrameForce(ctx), env, body)
+    Apply { function, argument } ->
+      compute(FrameAwaitFunTerm(env, argument, ctx), env, function)
     Error -> fail @"evaluation failure"
-    Builtin(_) -> fail @"builtins not supported"
+    Builtin(fun) -> {
+      let force_count = builtin.index_bytearray(default_force_counts, fun)
+
+      let args_count = builtin.index_bytearray(default_arg_counts, fun)
+
+      return(ctx, VBuiltin { fun, term, force_count, args_count, args: [] })
+    }
   }
 }
 
 fn return(ctx: Context, value: Value) -> Term {
   when ctx is {
     FrameApplyFun(function, ctx) -> apply_eval(ctx, function, value)
-    FrameApplyArg(arg_var_env, arg, ctx) -> {
+    FrameAwaitFunTerm(arg_var_env, arg, ctx) -> {
       let frame = FrameApplyFun(value, ctx)
       compute(frame, arg_var_env, arg)
     }
@@ -61,14 +70,63 @@ fn return(ctx: Context, value: Value) -> Term {
   }
 }
 
+fn force_eval(ctx: Context, value: Value) -> Term {
+  when value is {
+    VDelay(body, env) -> compute(ctx, env, body)
+    VBuiltin { fun, term, force_count, args_count, args } ->
+      if force_count > 0 {
+        //TODO: Should call evalBuiltinApp here for exact semantics
+        // but in reality we dont have a builtin that only takes in force
+        return(
+          ctx,
+          VBuiltin {
+            fun,
+            term: Force(term),
+            force_count: force_count - 1,
+            args_count,
+            args,
+          },
+        )
+      } else {
+        fail @"builtin term argument expected"
+      }
+    _ -> fail @"nonpolymorphic instantiation"
+  }
+}
+
 fn apply_eval(ctx: Context, function: Value, argument: Value) -> Term {
   todo
 }
 
-fn force_eval(ctx: Context, value: Value) -> Term {
-  when value is {
-    VDelay(body, env) -> compute(ctx, env, body)
-    _ -> fail @"nonpolymorphic instantiation"
+fn eval_builtin(
+  fun: Int,
+  term: Term,
+  args_count: Int,
+  args: List<Value>,
+) -> Value {
+  todo
+}
+
+fn call_builtin(fun: Int, args: List<Value>) -> Value {
+  if fun < 43 {
+    when fun is {
+      // AddInteger
+      0 ->
+        when args is {
+          [VCon(Integer(a)), VCon(Integer(b))] -> VCon(Integer(a + b))
+          _ -> fail @"Fail Case Here"
+        }
+      // SubtractInteger
+      1 ->
+        when args is {
+          [VCon(Integer(a)), VCon(Integer(b))] -> VCon(Integer(a - b))
+          _ -> fail @"Fail Case Here"
+        }
+      // Case for negative builtins
+      _ -> fail @"Invalid builtin"
+    }
+  } else {
+    todo
   }
 }
 
@@ -107,5 +165,5 @@ test run_1() {
       argument: TConstant(Integer(1)),
     }
 
-  run(term) == TConstant(Integer(1))
+  run(TConstant(Integer(1))) == TConstant(Integer(1))
 }
