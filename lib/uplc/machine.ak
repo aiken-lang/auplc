@@ -1,16 +1,21 @@
 use aiken/builtin
 use uplc/builtins.{default_arg_counts, default_force_counts}
 use uplc/constant.{Constant, Integer}
-use uplc/term.{Apply,
-  Builtin, Delay, Error, Force, Lambda, TConstant, Term, Var}
+use uplc/term.{
+  Apply, Builtin, Case, Delay, Error, Force, Lambda, TConstant, TConstr, Term,
+  Var,
+}
 
 pub type Env =
   List<Value>
 
 pub type Context {
-  FrameApplyFun(Value, Context)
+  FrameAwaitArg(Value, Context)
   FrameAwaitFunTerm(Env, Term, Context)
+  FrameAwaitFunValue(Value, Context)
   FrameForce(Context)
+  FrameConstr(Env, Int, List<Term>, List<Value>, Context)
+  FrameCases(Env, List<Term>, Context)
   NoFrame
 }
 
@@ -21,6 +26,15 @@ pub type Value {
   // don't need to hold builtin state
   // this is literally serializable
   VBuiltin { fun: Int, force_count: Int, args_count: Int, args: List<Value> }
+  VConstr { tag: Int, fields: List<Value> }
+}
+
+fn list_at(list: List<a>, index: Int) -> a {
+  if index == 0 {
+    list |> builtin.head_list
+  } else {
+    list |> builtin.tail_list |> list_at(index - 1)
+  }
 }
 
 pub fn run(term: Term) -> Term {
@@ -47,21 +61,51 @@ fn compute(ctx: Context, env: Env, term: Term) -> Term {
 
       return(ctx, VBuiltin { fun, force_count, args_count, args: [] })
     }
+    TConstr { tag, fields } ->
+      when fields is {
+        [] -> return(ctx, VConstr(tag, []))
+        [t, ..rest] -> compute(FrameConstr(env, tag, rest, [], ctx), env, t)
+      }
+    Case { constr, branches } ->
+      compute(FrameCases(env, branches, ctx), env, constr)
   }
 }
 
 fn return(ctx: Context, value: Value) -> Term {
   when ctx is {
-    FrameApplyFun(function, ctx) -> apply_eval(ctx, function, value)
+    FrameAwaitArg(function, ctx) -> apply_eval(ctx, function, value)
     FrameAwaitFunTerm(arg_var_env, arg, ctx) -> {
-      let frame = FrameApplyFun(value, ctx)
+      let frame = FrameAwaitArg(value, ctx)
       compute(frame, arg_var_env, arg)
     }
+    FrameAwaitFunValue(arg, ctx) -> apply_eval(ctx, value, arg)
     FrameForce(ctx) -> force_eval(ctx, value)
     NoFrame -> {
       let term = discharge_value(value)
       term
     }
+    FrameConstr(env, tag, fields, eval_fields, ctx) -> {
+      let done = [value, ..eval_fields]
+
+      when fields is {
+        [] -> return(ctx, VConstr(tag, done))
+        [next, ..rest] ->
+          compute(FrameConstr(env, tag, rest, done, ctx), env, next)
+      }
+    }
+    FrameCases(env, cs, ctx) ->
+      when value is {
+        VConstr { tag, fields } ->
+          cs |> list_at(tag) |> compute(transfer_fields(fields, ctx), env, _)
+        _ -> fail @"Not a constr"
+      }
+  }
+}
+
+fn transfer_fields(fields: List<Value>, ctx: Context) -> Context {
+  when fields is {
+    [] -> ctx
+    [arg, ..rest] -> transfer_fields(rest, FrameAwaitFunValue(arg, ctx))
   }
 }
 
@@ -154,11 +198,16 @@ fn discharge_value(value: Value) -> Term {
 
       discharge_builtin_args(builtin_forces, args)
     }
+    VConstr { tag, fields } -> TConstr(tag, discharge_constr_fields(fields, []))
   }
-  // VLambda { body: Term, env: Env }
-  // // don't need to hold builtin state
-  // // this is literally serializable
-  // VBuiltin { fun: Int, force_count: Int, args_count: Int, args: List<Value> }
+}
+
+fn discharge_constr_fields(fields: List<Value>, fold: List<Term>) -> List<Term> {
+  when fields is {
+    [] -> fold
+    [field, ..rest] ->
+      discharge_constr_fields(rest, [discharge_value(field), ..fold])
+  }
 }
 
 fn discharge_builtin_forces(fun: Int, forces_applied: Int) -> Term {
@@ -248,4 +297,29 @@ test run_2() {
   run(term) == Lambda(
     Apply(Apply(Builtin(0), TConstant(Integer(1))), TConstant(Integer(1))),
   )
+}
+
+test run_3() {
+  let term =
+    Apply(
+      Lambda(
+        Apply(
+          Lambda(Apply(Apply(Builtin(1), Var(1)), Var(2))),
+          TConstant(Integer(3)),
+        ),
+      ),
+      TConstant(Integer(1)),
+    )
+
+  run(term) == TConstant(Integer(2))
+}
+
+test run_4() {
+  let term =
+    Case(
+      TConstr(0, [TConstant(Integer(3)), TConstant(Integer(1))]),
+      [Lambda(Lambda(Apply(Apply(Builtin(1), Var(2)), Var(1))))],
+    )
+
+  run(term) == TConstant(Integer(2))
 }

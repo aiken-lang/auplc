@@ -19,4 +19,8 @@ pub type Term {
   Error
 
   Builtin(Int)
+
+  TConstr { tag: Int, fields: List<Term> }
+
+  Case { constr: Term, branches: List<Term> }
 }
