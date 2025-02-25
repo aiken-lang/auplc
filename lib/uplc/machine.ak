@@ -2,33 +2,15 @@ use aiken/builtin
 use uplc/builtins.{
   add_integer, default_arg_counts, default_force_counts, subtract_integer,
 }
-use uplc/constant.{Constant, Integer}
+use uplc/constant.{Integer}
 use uplc/term.{
   Apply, Builtin, Case, Delay, Error, Force, Lambda, TConstant, TConstr, Term,
   Var,
 }
-
-pub type Env =
-  List<Value>
-
-pub type Context {
-  FrameAwaitArg(Value, Context)
-  FrameAwaitFunTerm(Env, Term, Context)
-  FrameAwaitFunValue(Value, Context)
-  FrameForce(Context)
-  FrameConstr(Env, Int, List<Term>, List<Value>, Context)
-  FrameCases(Env, List<Term>, Context)
-  NoFrame
-}
-
-pub type Value {
-  VCon(Constant)
-  VDelay(Term, Env)
-  VLambda { body: Term, env: Env }
-  // don't need to hold builtin state
-  // this is literally serializable
-  VBuiltin { fun: Int, force_count: Int, args_count: Int, args: List<Value> }
-  VConstr { tag: Int, fields: List<Value> }
+use uplc/value.{
+  Context, Env, FrameAwaitArg, FrameAwaitFunTerm, FrameAwaitFunValue, FrameCases,
+  FrameConstr, FrameForce, NoFrame, VBuiltin, VCon, VConstr, VDelay, VLambda,
+  Value,
 }
 
 fn list_at(list: List<a>, index: Int) -> a {
