@@ -3,15 +3,15 @@ use uplc/builtins.{default_arg_counts, default_force_counts}
 use uplc/constant.{Constant}
 use uplc/tweaked_term.{
   Apply, Blake2b_256, Builtin, Delay, Error, Force, Hash, Lambda, TConstant,
-  Term, TermHash, hashing_algo,
+  Term, TermHash, Var, hashing_algo,
 }
 
 pub type EnvHash =
   Hash<Blake2b_256, Env>
 
 pub type Env {
-  value: ValueHash,
-  next: EnvHash,
+  Node { value: ValueHash, next: EnvHash }
+  Empty
 }
 
 pub type ContextHash =
@@ -47,37 +47,79 @@ pub type Value {
 
 pub type MachineState {
   Compute(Context, Env, TermHash)
-  // ComputeAwaitTerm(Context, Env, TermHash)
   Return(Context, ValueHash)
-  // ReturnAwaitValue(Context, ValueHash)
   Done(TermHash)
-  IteratingEnv(Context, Env, Int)
+  IteratingEnv(Context, EnvHash, Int)
   ErrorState(ByteArray)
 }
 
-pub type MachineWrapper {
-  ms: MachineState,
-  value: Option<Value>,
-  term: Option<Term>,
-  envs: List<Value>,
+pub fn iterate_next_env(ctx: Context, env_hash: EnvHash, env: Env, index: Int) {
+  expect env_hash == ( env |> builtin.serialise_data |> hashing_algo )
+
+  when env is {
+    Empty -> ErrorState("Free variable")
+    Node { value, next } ->
+      if index == 1 {
+        Return(ctx, value)
+      } else {
+        IteratingEnv(ctx, next, index - 1)
+      }
+  }
 }
 
-// pub fn run(machine_state: MachineState) {
-//   when machine_state is {
-//     Compute(ctx, env, term) -> compute(ctx, env, term)
-//     _ -> todo
-//   }
+// node operator posts merkle root
+// - L2 utxo set
+// - L2 transactions that are included
+// - L2 computation merkle tree root
+
+// pub type MachineState {
+//   Compute(Context, Env, TermHash)
+//   Return(Context, ValueHash)
+//   Done(TermHash)
+//   IteratingEnv(Context, Env, Int)
+//   ErrorState(ByteArray)
 // }
 
-pub fn iterate_env(ctx: Context, env: Env, index: Int, next_env: Option<Env>) {
-  if index == 1 {
-    Return(ctx, env.value)
-  } else {
-    expect Some(next_env) = next_env
-    expect env.next == ( next_env |> builtin.serialise_data |> hashing_algo )
+// hashing_algo(state: MachineState + expected_state:MachineState) = leaf of the computation merkle tree
 
-    IteratingEnv(ctx, next_env, index - 1)
-  }
+test thing() {
+  let term = Error
+
+  let state =
+    Compute(NoFrame, Empty, term |> builtin.serialise_data |> hashing_algo)
+
+  let expected_state =
+    Return(
+      NoFrame,
+      VDelay(#"", Empty) |> builtin.serialise_data |> hashing_algo,
+    )
+
+  let next_state =
+    when state is {
+      Compute(ctx, env, term_hash) -> compute(ctx, env, term_hash, term)
+
+      _ -> fail @"rest"
+    }
+
+  next_state != expected_state
+}
+
+test thing2() fail {
+  let term = Error
+
+  let state =
+    Compute(NoFrame, Empty, term |> builtin.serialise_data |> hashing_algo)
+
+  let expected_state = ErrorState("Evaluation Failure")
+
+  let next_state =
+    when state is {
+      Compute(ctx, env, term_hash) -> compute(ctx, env, term_hash, term)
+
+      _ -> fail @"rest"
+    }
+
+  next_state != expected_state
 }
 
 pub fn compute(
@@ -89,6 +131,17 @@ pub fn compute(
   expect term_hash == ( term |> builtin.serialise_data |> hashing_algo )
 
   when term is {
+    Var(index) ->
+      when env is {
+        Empty -> ErrorState("Free variable")
+        Node { value, next } ->
+          if index == 1 {
+            Return(ctx, value)
+          } else {
+            IteratingEnv(ctx, next, index - 1)
+          }
+      }
+
     Delay(inner_hash) ->
       Return(
         ctx,
