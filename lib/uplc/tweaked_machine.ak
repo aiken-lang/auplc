@@ -53,9 +53,7 @@ pub type MachineState {
   ErrorState(ByteArray)
 }
 
-pub fn iterate_next_env(ctx: Context, env_hash: EnvHash, env: Env, index: Int) {
-  expect env_hash == ( env |> builtin.serialise_data |> hashing_algo )
-
+fn index_env(ctx: Context, env: Env, index: Int) -> MachineState {
   when env is {
     Empty -> ErrorState("Free variable")
     Node { value, next } ->
@@ -65,6 +63,17 @@ pub fn iterate_next_env(ctx: Context, env_hash: EnvHash, env: Env, index: Int) {
         IteratingEnv(ctx, next, index - 1)
       }
   }
+}
+
+pub fn iterate_next_env(
+  ctx: Context,
+  env_hash: EnvHash,
+  env: Env,
+  index: Int,
+) -> MachineState {
+  expect env_hash == ( env |> builtin.serialise_data |> hashing_algo )
+
+  index_env(ctx, env, index)
 }
 
 // node operator posts merkle root
@@ -131,16 +140,7 @@ pub fn compute(
   expect term_hash == ( term |> builtin.serialise_data |> hashing_algo )
 
   when term is {
-    Var(index) ->
-      when env is {
-        Empty -> ErrorState("Free variable")
-        Node { value, next } ->
-          if index == 1 {
-            Return(ctx, value)
-          } else {
-            IteratingEnv(ctx, next, index - 1)
-          }
-      }
+    Var(index) -> index_env(ctx, env, index)
 
     Delay(inner_hash) ->
       Return(
@@ -157,15 +157,12 @@ pub fn compute(
         ctx,
         VLambda(body_hash, env) |> builtin.serialise_data |> hashing_algo,
       )
-    Apply { function, argument } -> {
-      let ctx =
-        ctx
-          |> builtin.serialise_data
-          |> hashing_algo
-          |> fn(a) { FrameAwaitFunTerm(env, argument, a) }
-
-      Compute(ctx, env, function)
-    }
+    Apply { function, argument } ->
+      ctx
+        |> builtin.serialise_data
+        |> hashing_algo
+        |> fn(a) { FrameAwaitFunTerm(env, argument, a) }
+        |> Compute(env, function)
     TConstant(constant) ->
       Return(ctx, VCon(constant) |> builtin.serialise_data |> hashing_algo)
 
